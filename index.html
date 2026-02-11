@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>飛行記錄器 - 快速打卡</title>
+    <style>
+        /* 基礎設定：深色模式與防誤觸 */
+        body {
+            background-color: #121212; /* 深黑底 */
+            color: #E0E0E0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow-y: auto;
+            touch-action: manipulation; /* 優化觸控 */
+        }
+
+        h1 { color: #00FF94; /* 螢光綠 */ text-shadow: 0 0 10px rgba(0,255,148,0.5); font-size: 24px; margin-bottom: 20px; }
+        
+        /* 區塊樣式 */
+        .card {
+            background: #1E1E1E;
+            border-radius: 16px;
+            padding: 20px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            margin-bottom: 20px;
+            border: 1px solid #333;
+        }
+
+        label { display: block; margin-bottom: 10px; color: #BB86FC; /* 夢幻紫 */ font-size: 14px; font-weight: bold; }
+
+        /* 腦嗨滑桿 */
+        input[type=range] {
+            width: 100%;
+            height: 30px; /* 加大觸控區 */
+            accent-color: #00FF94;
+            margin-bottom: 10px;
+        }
+        .range-value { text-align: center; font-size: 24px; color: #00FF94; font-weight: bold; margin-bottom: 15px; }
+
+        /* 標籤雲 */
+        .tags-container { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+        .tag-btn {
+            background: #2C2C2C;
+            border: 1px solid #BB86FC;
+            color: #BB86FC;
+            padding: 10px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: 0.2s;
+            user-select: none;
+        }
+        .tag-btn.active {
+            background: #BB86FC;
+            color: #000;
+            font-weight: bold;
+            box-shadow: 0 0 10px #BB86FC;
+        }
+
+        /* 文字輸入框 */
+        textarea {
+            width: 100%;
+            height: 80px;
+            background: #2C2C2C;
+            border: 1px solid #555;
+            color: #FFF;
+            border-radius: 10px;
+            padding: 10px;
+            font-size: 16px;
+            box-sizing: border-box; /* 確保 padding 不會撐開寬度 */
+            resize: none; /* 禁止拉大 */
+        }
+        textarea:focus { outline: 2px solid #00FF94; border-color: transparent; }
+
+        /* 發送按鈕 */
+        .submit-btn {
+            background: linear-gradient(135deg, #00FF94, #00CC76);
+            color: #000;
+            font-size: 18px;
+            font-weight: bold;
+            padding: 15px;
+            width: 100%;
+            max-width: 400px;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 0 15px rgba(0,255,148,0.3);
+            margin-top: 10px;
+            transition: transform 0.1s;
+        }
+        .submit-btn:active { transform: scale(0.95); }
+
+        /* 讀取動畫 */
+        .loading { display: none; margin-top: 10px; color: #00FF94; }
+
+    </style>
+</head>
+<body>
+
+    <h1>🐰 飛行日誌 - 快速打卡</h1>
+
+    <div class="card">
+        <label>🧠 腦嗨程度 (Brain High)</label>
+        <div class="range-value" id="brainValue">5</div>
+        <input type="range" id="brainRange" min="1" max="10" value="5" oninput="document.getElementById('brainValue').innerText = this.value">
+    </div>
+
+    <div class="card">
+        <label>🏷️ 現在感覺如何？(可多選)</label>
+        <div class="tags-container" id="tagsContainer">
+            <div class="tag-btn" onclick="toggleTag(this)">😊 快樂</div>
+            <div class="tag-btn" onclick="toggleTag(this)">😵 暈眩</div>
+            <div class="tag-btn" onclick="toggleTag(this)">🌈 視覺強化</div>
+            <div class="tag-btn" onclick="toggleTag(this)">🛋️ 鎖死(Stoned)</div>
+            <div class="tag-btn" onclick="toggleTag(this)">🍔 爆餓(Munchies)</div>
+            <div class="tag-btn" onclick="toggleTag(this)">🤔 思考人生</div>
+            <div class="tag-btn" onclick="toggleTag(this)">😱 焦慮(Paranoid)</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <label>📝 隨手記 (選填)</label>
+        <textarea id="quickNote" placeholder="現在在想什麼？有什麼特別的感覺？"></textarea>
+    </div>
+
+    <button class="submit-btn" onclick="submitData()">🚀 發送紀錄</button>
+    <div class="loading" id="loadingText">訊號傳送中... 🛸</div>
+
+    <script>
+        // 設定你的 Google Apps Script 網址 (請替換下面這行)
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwuqxPI-XaZm5EP3yhmseD8UuHmwoRgZ0Yjjm0vF7TtlqaaX32u4jlnDjZZduELB0q1/exec"; 
+
+        function toggleTag(element) {
+            element.classList.toggle("active");
+        }
+
+        function submitData() {
+            const btn = document.querySelector(".submit-btn");
+            const loading = document.getElementById("loadingText");
+            
+            // 鎖定按鈕避免重複發送
+            btn.disabled = true;
+            btn.innerText = "紀錄中...";
+            loading.style.display = "block";
+
+            // 收集資料
+            const brainHigh = document.getElementById("brainRange").value;
+            const note = document.getElementById("quickNote").value;
+            
+            // 收集選中的標籤
+            const activeTags = [];
+            document.querySelectorAll(".tag-btn.active").forEach(tag => {
+                activeTags.push(tag.innerText);
+            });
+
+            const payload = {
+                type: "Quick",
+                brainHigh: brainHigh,
+                tags: activeTags.join(", "), // 轉成字串
+                note: note
+            };
+
+            // 使用 fetch 發送 (no-cors 模式是為了跨域傳輸，雖然收不到回傳內容但資料會送達)
+            fetch(SCRIPT_URL, {
+                method: "POST",
+                mode: "no-cors", 
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            }).then(() => {
+                alert("✅ 紀錄成功！祝旅途愉快～");
+                // 重置表單
+                document.getElementById("quickNote").value = "";
+                document.querySelectorAll(".tag-btn.active").forEach(el => el.classList.remove("active"));
+                document.getElementById("brainRange").value = 5;
+                document.getElementById("brainValue").innerText = "5";
+            }).catch(error => {
+                alert("❌ 紀錄失敗，請檢查網路或是 Apps Script 設定。");
+                console.error(error);
+            }).finally(() => {
+                btn.disabled = false;
+                btn.innerText = "🚀 發送紀錄";
+                loading.style.display = "none";
+            });
+        }
+    </script>
+</body>
+</html>
